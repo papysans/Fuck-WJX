@@ -147,13 +147,25 @@
     .qa .a { white-space:pre-wrap; color:#eef0f3; background:rgba(255,255,255,0.03);
       border-radius:6px; padding:6px 8px; font-size:12.5px; }
     .qa .a.miss { color:#e0b062; }
+    .qa .a.empty { color:#6b7280; font-style:italic; background:transparent; padding:2px 0; }
     .qa .copy { all:unset; cursor:pointer; float:right; font-size:11px; color:#8b909a;
       padding:1px 6px; border-radius:4px; }
     .qa .copy:hover { background:rgba(255,255,255,0.08); color:#cfd3da; }
     .raw { white-space:pre-wrap; }
+    /* 移开收起用的小把手：右下角低存在感圆点 */
+    .handle {
+      position:fixed; right:16px; bottom:16px; width:34px; height:34px;
+      display:none; align-items:center; justify-content:center;
+      border-radius:50%; background:rgba(20,22,28,0.6); color:#cfd3da;
+      font-size:16px; line-height:1; cursor:pointer; user-select:none;
+      opacity:0.45; transition:opacity 0.15s ease;
+      box-shadow:0 4px 14px rgba(0,0,0,0.4);
+    }
+    .handle:hover { opacity:1; }
   `;
 
   const OVERLAY_HTML = `
+    <div class="handle" id="handle" title="点开复习面板">≡</div>
     <div class="panel" id="panel">
       <div class="bar" id="bar">
         <span class="title">· 复习面板 ·</span>
@@ -163,7 +175,7 @@
       <div class="tools">
         <label>透明 <input type="range" id="opacity" min="0.15" max="1" step="0.05" value="0.95"></label>
         <label>亮度 <input type="range" id="bright" min="0.4" max="1.4" step="0.05" value="1"></label>
-        <label><input type="checkbox" id="fade" checked> 移开即隐</label>
+        <label><input type="checkbox" id="autocollapse" checked> 移开收起</label>
       </div>
       <div class="status" id="status">按「扫题求答案」或快捷键 Ctrl+Shift+S 开始</div>
       <div class="list" id="list"></div>
@@ -173,7 +185,15 @@
   let host = null;
   let root = null;
   let els = {};
-  const state = { visible: false, opacity: 0.95, brightness: 1, idleHide: true };
+  // hidden = 硬开关（整个 host 隐藏，Ctrl+Shift+X）；collapsed = 收起到右下角把手。
+  const state = {
+    visible: false,
+    opacity: 0.95,
+    brightness: 1,
+    autoCollapse: true,
+    hidden: true,
+    collapsed: false,
+  };
 
   function ensureOverlay() {
     if (host) return;
@@ -191,12 +211,13 @@
 
     els = {
       panel: root.getElementById("panel"),
+      handle: root.getElementById("handle"),
       bar: root.getElementById("bar"),
       scan: root.getElementById("scan"),
       hide: root.getElementById("hide"),
       opacity: root.getElementById("opacity"),
       bright: root.getElementById("bright"),
-      fade: root.getElementById("fade"),
+      autoCollapse: root.getElementById("autocollapse"),
       status: root.getElementById("status"),
       list: root.getElementById("list"),
     };
@@ -204,9 +225,24 @@
     applyVisual();
   }
 
+  // host 始终保持正常 display，靠内部 panel/handle 切换；hidden 时才整体 display:none。
+  function applyLayout() {
+    if (!host) return;
+    host.style.display = state.hidden ? "none" : "";
+    if (state.hidden) return;
+    els.panel.style.display = state.collapsed ? "none" : "";
+    els.handle.style.display = state.collapsed ? "flex" : "none";
+  }
+
+  function setCollapsed(collapsed) {
+    state.collapsed = collapsed;
+    applyLayout();
+    if (!collapsed) host.style.opacity = String(state.opacity); // 展开恢复到设定透明度
+  }
+
   function applyVisual() {
     if (!host) return;
-    host.style.opacity = String(state.visible ? state.opacity : state.opacity);
+    host.style.opacity = String(state.opacity);
     els.panel.style.filter = `brightness(${state.brightness})`;
   }
 
@@ -237,13 +273,17 @@
       state.brightness = Number(els.bright.value);
       els.panel.style.filter = `brightness(${state.brightness})`;
     });
-    els.fade.addEventListener("change", () => (state.idleHide = els.fade.checked));
-
-    // 鼠标移开即彻底隐藏（老师走过来秒消失），靠 Ctrl+Shift+X 再唤出
-    host.addEventListener("mouseenter", () => (host.style.opacity = String(state.opacity)));
-    host.addEventListener("mouseleave", () => {
-      if (state.idleHide) host.style.display = "none";
+    els.autoCollapse.addEventListener("change", () => {
+      state.autoCollapse = els.autoCollapse.checked;
+      if (!state.autoCollapse) setCollapsed(false); // 关闭时面板常显，不再收起
     });
+
+    // 移开收起：鼠标离开面板 → 收起到右下角把手；移到把手 → 展开回面板。
+    els.panel.addEventListener("mouseleave", () => {
+      if (state.autoCollapse && !state.hidden) setCollapsed(true);
+    });
+    els.handle.addEventListener("mouseenter", () => setCollapsed(false));
+    els.handle.addEventListener("click", () => setCollapsed(false));
 
     els.scan.addEventListener("click", runScan);
     els.hide.addEventListener("click", hideOverlay);
@@ -251,20 +291,29 @@
 
   function showOverlay() {
     ensureOverlay();
-    host.style.display = "";
+    state.hidden = false;
+    state.collapsed = false;
+    applyLayout();
+    host.style.opacity = String(state.opacity);
     state.visible = true;
   }
   function hideOverlay() {
+    // × 按钮：硬隐藏整个 host（panel + handle 都不可见）
     if (!host) return;
-    host.style.display = "none";
+    state.hidden = true;
+    applyLayout();
     state.visible = false;
   }
   function toggleOverlay() {
+    // Ctrl+Shift+X 硬开关：整体隐藏/显示，展开时默认显示面板（非收起态）
     ensureOverlay();
-    // 按当前 display 翻转：移开自动隐藏后，按快捷键也能再唤出
-    const hidden = host.style.display === "none";
-    host.style.display = hidden ? "" : "none";
-    state.visible = hidden;
+    state.hidden = !state.hidden;
+    if (!state.hidden) {
+      state.collapsed = false;
+      host.style.opacity = String(state.opacity);
+    }
+    applyLayout();
+    state.visible = !state.hidden;
   }
 
   function setStatus(t) {
@@ -314,7 +363,17 @@
     result.answers.forEach((a) => (byIndex[a.index] = a.answer));
     els.list.innerHTML = questions
       .map((q) => {
-        const ans = byIndex[q.index] != null ? String(byIndex[q.index]) : "（模型未返回该题）";
+        const has = Object.prototype.hasOwnProperty.call(byIndex, q.index);
+        const val = has ? String(byIndex[q.index] ?? "") : null;
+        // 空字符串 = 模型判定为个人信息/背景，无需作答：灰色提示、不给复制按钮
+        if (val !== null && val.trim() === "") {
+          return `
+      <div class="qa" data-idx="${q.index}">
+        <div class="q"><span class="tag">#${q.index}</span>${esc(q.stem).slice(0, 120)}</div>
+        <div class="a empty">（背景/无需作答）</div>
+      </div>`;
+        }
+        const ans = val == null ? "（模型未返回该题）" : val;
         const miss = /^【笔记未覆盖】/.test(ans) ? " miss" : "";
         return `
       <div class="qa" data-idx="${q.index}">
@@ -329,6 +388,22 @@
     });
   }
 
+  // MV3 后台 SW 可能休眠/扩展刚重载 → 首次 sendMessage 偶发
+  // "Could not establish connection"。带一次重试：先发一次唤醒 SW，等 350ms 再重试。
+  async function sendAsk(questions) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await chrome.runtime.sendMessage({ type: "ASK_AI", questions });
+      } catch (e) {
+        if (attempt === 0) {
+          await new Promise((r) => setTimeout(r, 350));
+          continue;
+        }
+        throw e;
+      }
+    }
+  }
+
   async function runScan() {
     showOverlay();
     const questions = scanQuestions();
@@ -340,9 +415,9 @@
     setStatus(`扫到 ${questions.length} 题，正在请求 AI…`);
     let resp;
     try {
-      resp = await chrome.runtime.sendMessage({ type: "ASK_AI", questions });
+      resp = await sendAsk(questions);
     } catch (e) {
-      setStatus("扩展通信失败：" + (e.message || e));
+      setStatus("扩展通信失败，请在 chrome://extensions 重新加载本扩展并刷新页面(F5)后重试");
       return;
     }
     if (!resp || !resp.ok) {
