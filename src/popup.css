@@ -1,38 +1,82 @@
+/* 「隐形便签」皮肤：两套主题 token 挂在 :root，[data-theme="dark"] 覆盖。 */
+:root {
+  --paper:#F5F4F0; --paper-edge:#ECEAE4; --wash:#EDEBE4;
+  --ink:#33322E; --ink-2:#6E6C64; --ink-3:#A8A59C;
+  --rule:#E0DDD5; --amber:#9A7B33;
+  --field:#FFFFFF;
+  --sans:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;
+}
+:root[data-theme="dark"] {
+  --paper:#1E1E1C; --paper-edge:#262624; --wash:#2B2B27;
+  --ink:#E5E3DC; --ink-2:#9C998F; --ink-3:#6C685F;
+  --rule:#33322E; --amber:#C7A24E;
+  --field:#141412;
+}
+
 * { box-sizing: border-box; }
+html, body { margin: 0; }
 body {
-  margin: 0;
-  width: 320px;
-  font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-  color: #e6e6e6;
-  background: #16181c;
+  width: 300px; background: var(--paper); color: var(--ink);
+  font-family: var(--sans);
 }
-.wrap { padding: 12px 14px; }
-h1 { font-size: 14px; margin: 0 0 10px; letter-spacing: 1px; color: #cfd3da; }
-section { margin-bottom: 12px; }
-.sec-title { font-size: 11px; color: #8b909a; margin-bottom: 5px; }
-textarea {
-  width: 100%; height: 110px; resize: vertical;
-  background: #1e2128; color: #e6e6e6;
-  border: 1px solid #2c3038; border-radius: 6px; padding: 7px; font: inherit;
+
+/* 丝滑过渡：只对消费颜色的属性动画（变量本身不动画） */
+.pop, .ph, .ph-title, .pb, .seg, .seg button,
+label, textarea, input, .btns button, .mini button, .msg, .hint {
+  transition: background-color .35s ease, color .35s ease,
+              border-color .35s ease, box-shadow .35s ease;
 }
-label { display: block; font-size: 11px; color: #8b909a; margin-bottom: 7px; }
-input {
-  width: 100%; margin-top: 3px;
-  background: #1e2128; color: #e6e6e6;
-  border: 1px solid #2c3038; border-radius: 6px; padding: 6px 8px; font: inherit;
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+.pop { background: var(--paper); overflow: hidden; }
+
+.ph {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 11px 14px; background: var(--paper-edge); border-bottom: 1px solid var(--rule);
 }
+.ph-title { font: 500 11px var(--mono); letter-spacing: 1.5px; color: var(--ink-2); }
+
+.seg { display: flex; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
+.seg button {
+  cursor: pointer; font: 500 10.5px var(--mono); color: var(--ink-3);
+  padding: 3px 9px; background: transparent; border: 0;
+}
+.seg button.on { background: var(--ink); color: var(--paper); }
+
+.pb { padding: 14px; }
+
+label {
+  display: block; margin: 0 0 4px;
+  font: 500 10px var(--mono); letter-spacing: .5px; color: var(--ink-3);
+}
+textarea, input {
+  width: 100%; margin-bottom: 12px;
+  background: var(--field); color: var(--ink);
+  border: 1px solid var(--rule); border-radius: 5px; padding: 7px 9px;
+  font: 13px var(--sans);
+}
+textarea { height: 84px; resize: vertical; }
+
 .row { display: flex; gap: 8px; }
-.grow { flex: 1; }
-.narrow { width: 78px; }
-.btns { display: flex; gap: 6px; margin-top: 4px; }
-button {
-  flex: 1; cursor: pointer; padding: 7px 4px;
-  background: #262a32; color: #cfd3da;
-  border: 1px solid #333842; border-radius: 6px; font: inherit;
+.row .grow { flex: 1; }
+.row .narrow { width: 88px; }
+
+.btns { display: flex; gap: 7px; }
+.btns button {
+  flex: 1; cursor: pointer; padding: 8px; border-radius: 5px;
+  font: 500 12px var(--sans); color: var(--ink);
+  background: var(--field); border: 1px solid var(--rule);
 }
-button:hover { background: #2f343d; }
-button.primary { background: #3a56d4; color: #fff; border-color: #3a56d4; }
-button.primary:hover { background: #4864e6; }
-.msg { min-height: 16px; font-size: 11px; margin-top: 8px; color: #6bcf8a; }
-.msg.err { color: #e06a6a; }
-.hint { font-size: 10.5px; color: #6b7079; margin-top: 8px; line-height: 1.5; }
+.btns .pri { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+
+.mini { display: flex; gap: 7px; margin-top: 7px; }
+.mini button {
+  flex: 1; cursor: pointer; padding: 6px; border-radius: 5px;
+  font: 500 10.5px var(--mono); color: var(--ink-2);
+  background: transparent; border: 1px solid var(--rule);
+}
+
+.msg { min-height: 16px; margin-top: 10px; font: 500 11px var(--mono); letter-spacing: .5px; color: var(--amber); }
+.msg.err { color: #c2564d; }
+.hint { margin-top: 8px; font: 10px var(--mono); letter-spacing: .3px; color: var(--ink-3); line-height: 1.6; }

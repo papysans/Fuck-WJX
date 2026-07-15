@@ -1,5 +1,23 @@
 const $ = (id) => document.getElementById(id);
 
+let currentTheme = "light";
+
+// 应用主题：改 :root 的 data-theme + 分段按钮高亮（不落盘）。
+function applyTheme(theme) {
+  currentTheme = theme === "dark" ? "dark" : "light";
+  document.documentElement.setAttribute("data-theme", currentTheme);
+  $("themeLight").classList.toggle("on", currentTheme === "light");
+  $("themeDark").classList.toggle("on", currentTheme === "dark");
+}
+
+// 切换主题并写回 config.theme（与悬浮窗共享，保持一致）。
+async function setTheme(theme) {
+  applyTheme(theme);
+  const { config = {} } = await chrome.storage.local.get("config");
+  config.theme = currentTheme;
+  await chrome.storage.local.set({ config });
+}
+
 async function load() {
   const { config = {}, notes = "" } = await chrome.storage.local.get(["config", "notes"]);
   $("notes").value = notes;
@@ -8,6 +26,7 @@ async function load() {
   $("model").value = config.model || "";
   $("temperature").value = config.temperature ?? 0.3;
   $("wordLimit").value = config.wordLimit ?? 300;
+  applyTheme(config.theme || "light");
 }
 
 function msg(text, isErr) {
@@ -24,6 +43,7 @@ async function save() {
     model: $("model").value.trim(),
     temperature: Number($("temperature").value) || 0.3,
     wordLimit: Number($("wordLimit").value) || 300,
+    theme: currentTheme,
   };
   await chrome.storage.local.set({ config, notes: $("notes").value });
   msg("已保存 ✓");
@@ -77,6 +97,8 @@ async function importConfig(file) {
   }
 }
 
+$("themeLight").addEventListener("click", () => setTheme("light"));
+$("themeDark").addEventListener("click", () => setTheme("dark"));
 $("save").addEventListener("click", save);
 $("open").addEventListener("click", () => sendToTab("TOGGLE_OVERLAY"));
 $("scan").addEventListener("click", () => sendToTab("SCAN_NOW"));

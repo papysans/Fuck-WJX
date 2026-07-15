@@ -1,51 +1,56 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
-  <div class="wrap">
-    <h1>复习面板</h1>
-
-    <section>
-      <div class="sec-title">今日笔记（markdown）</div>
-      <textarea id="notes" placeholder="把当天整理的知识点粘进来，AI 会优先据此答题"></textarea>
-    </section>
-
-    <section>
-      <div class="sec-title">AI 接口（OpenAI 兼容）</div>
-      <label>Base URL
-        <input id="baseUrl" type="text" placeholder="https://api.deepseek.com" />
-      </label>
-      <label>API Key
-        <input id="apiKey" type="password" placeholder="sk-..." />
-      </label>
-      <div class="row">
-        <label class="grow">Model
-          <input id="model" type="text" placeholder="deepseek-chat" />
-        </label>
-        <label class="narrow">温度
-          <input id="temperature" type="number" min="0" max="2" step="0.1" value="0.3" />
-        </label>
+  <div class="pop">
+    <div class="ph">
+      <span class="ph-title">复习面板 · 设置</span>
+      <div class="seg" id="themeSeg">
+        <button type="button" id="themeLight" title="浅色">浅</button>
+        <button type="button" id="themeDark" title="深色">深</button>
       </div>
-      <label>每题字数上限
-        <input id="wordLimit" type="number" min="50" max="1000" step="50" value="300" />
-      </label>
-    </section>
+    </div>
+    <div class="pb">
+      <label>今日笔记 · Markdown</label>
+      <textarea id="notes" placeholder="把当天整理的知识点粘进来，AI 会优先据此答题"></textarea>
 
-    <div class="btns">
-      <button id="save" class="primary">保存</button>
-      <button id="open">打开悬浮窗</button>
-      <button id="scan">扫题求答案</button>
+      <label>接口 Base URL</label>
+      <input id="baseUrl" type="text" placeholder="https://api.deepseek.com" />
+
+      <label>API Key</label>
+      <input id="apiKey" type="password" placeholder="sk-..." />
+
+      <div class="row">
+        <div class="grow">
+          <label>模型</label>
+          <input id="model" type="text" placeholder="deepseek-chat" />
+        </div>
+        <div class="narrow">
+          <label>温度</label>
+          <input id="temperature" type="number" min="0" max="2" step="0.1" value="0.3" />
+        </div>
+      </div>
+
+      <label>每题字数上限</label>
+      <input id="wordLimit" type="number" min="50" max="1000" step="50" value="300" />
+
+      <div class="btns">
+        <button id="save" class="pri">保存</button>
+        <button id="open">打开悬浮窗</button>
+        <button id="scan">扫题作答</button>
+      </div>
+      <div class="mini">
+        <button id="export">导出配置</button>
+        <button id="import">导入配置</button>
+        <input id="importFile" type="file" accept="application/json" hidden />
+      </div>
+
+      <div id="msg" class="msg"></div>
+      <div class="hint">Ctrl+Shift+X 秒隐/显 · Ctrl+Shift+S 扫题。key 只存本地，不上传。</div>
     </div>
-    <div class="btns">
-      <button id="export">导出配置</button>
-      <button id="import">导入配置</button>
-      <input id="importFile" type="file" accept="application/json" hidden />
-    </div>
-    <div id="msg" class="msg"></div>
-    <div class="hint">快捷键：Ctrl+Shift+X 秒隐/显 · Ctrl+Shift+S 扫题。key 只存本地，不上传。</div>
   </div>
   <script src="popup.js"></script>
 </body>

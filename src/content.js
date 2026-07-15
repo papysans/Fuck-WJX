@@ -126,72 +126,144 @@
   /* ============================================================
    * ③ 悬浮窗（closed Shadow DOM，样式隔离 + 降低页面可探测性）
    * ========================================================== */
+  // 「隐形便签」皮肤：两套主题 token 挂在 .wrap 上，[data-theme="dark"] 覆盖。
+  // 切换主题时，消费颜色的元素靠 transition 平滑过渡（变量本身不动画）。
   const OVERLAY_CSS = `
     :host { all: initial; }
+    .wrap {
+      --paper:#F5F4F0; --paper-edge:#ECEAE4; --wash:#EDEBE4;
+      --ink:#33322E; --ink-2:#6E6C64; --ink-3:#A8A59C;
+      --rule:#E0DDD5; --amber:#9A7B33;
+      --sans:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+      --mono:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;
+    }
+    .wrap[data-theme="dark"] {
+      --paper:#1E1E1C; --paper-edge:#262624; --wash:#2B2B27;
+      --ink:#E5E3DC; --ink-2:#9C998F; --ink-3:#6C685F;
+      --rule:#33322E; --amber:#C7A24E;
+    }
+    /* 丝滑过渡：只对消费颜色的属性动画 */
+    .panel, .bar, .bar .name, .bar .go, .bar .ic,
+    .tools, .tools label, .seg, .seg button,
+    .list, .blk, .blk .num, .blk .stem, .blk .ans, .blk .acts a,
+    .foot, .handle {
+      transition: background-color .35s ease, color .35s ease,
+                  border-color .35s ease, box-shadow .35s ease;
+    }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
     .panel {
-      width: 340px; max-height: 70vh; display: flex; flex-direction: column;
-      font: 13px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-      color: #e6e6e6; background: rgba(20,22,28,0.92);
-      border: 1px solid rgba(255,255,255,0.08); border-radius: 10px;
-      box-shadow: 0 8px 30px rgba(0,0,0,0.45); overflow: hidden;
+      width: 344px; max-height: 70vh; display: flex; flex-direction: column;
+      font-family: var(--sans); color: var(--ink); background: var(--paper);
+      border: 1px solid var(--rule); border-radius: 5px;
+      box-shadow: 0 6px 22px rgba(0,0,0,0.18); overflow: hidden;
     }
-    .bar { display:flex; align-items:center; gap:6px; padding:6px 8px;
-      background: rgba(255,255,255,0.04); cursor: move; user-select: none; }
-    .bar .title { flex:1; font-size:12px; color:#9aa0aa; letter-spacing:1px; }
-    .bar button { all: unset; cursor:pointer; padding:2px 6px; border-radius:4px;
-      font-size:12px; color:#cfd3da; }
-    .bar button:hover { background: rgba(255,255,255,0.08); }
-    .tools { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
-      padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.06); }
-    .tools label { font-size:11px; color:#8b909a; display:flex; align-items:center; gap:4px; }
-    .tools input[type=range] { width:70px; accent-color:#6b8afd; }
-    .go { all: unset; cursor:pointer; background:#3a56d4; color:#fff; padding:4px 10px;
-      border-radius:6px; font-size:12px; }
-    .go:hover { background:#4864e6; }
-    .status { padding:4px 10px; font-size:11px; color:#8b909a; min-height:14px; }
-    .list { overflow:auto; padding:4px 10px 10px; }
-    .qa { margin-bottom:10px; border-bottom:1px dashed rgba(255,255,255,0.07); padding-bottom:8px; }
-    .qa .q { color:#c7ccd4; font-size:12px; margin-bottom:3px; }
-    .qa .q .tag { color:#6b8afd; margin-right:4px; }
-    .qa .a { white-space:pre-wrap; color:#eef0f3; background:rgba(255,255,255,0.03);
-      border-radius:6px; padding:6px 8px; font-size:12.5px; }
-    .qa .a.miss { color:#e0b062; }
-    .qa .a.empty { color:#6b7280; font-style:italic; background:transparent; padding:2px 0; }
-    .qa .copy { all:unset; cursor:pointer; float:right; font-size:11px; color:#8b909a;
-      padding:1px 6px; border-radius:4px; }
-    .qa .copy:hover { background:rgba(255,255,255,0.08); color:#cfd3da; }
-    .qa .loc { all:unset; cursor:pointer; float:right; font-size:11px; color:#8b909a;
-      padding:1px 6px; border-radius:4px; margin-left:4px; }
-    .qa .loc:hover { background:rgba(255,255,255,0.08); color:#cfd3da; }
-    .qa .a.err { color:#e0736b; background:transparent; }
-    .raw { white-space:pre-wrap; }
-    /* 移开收起用的小把手：右下角低存在感圆点 */
+
+    /* 标题栏：极简，默认只露 笔记 / 扫题作答 / ◐ / × */
+    .bar {
+      display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+      background: var(--paper-edge); border-bottom: 1px solid var(--rule);
+      cursor: move; user-select: none; flex-shrink: 0;
+    }
+    .bar .name { flex: 1; font: 500 11px/1 var(--mono); letter-spacing: 1.5px; color: var(--ink-2); }
+    .bar .go {
+      all: unset; box-sizing: border-box; cursor: pointer;
+      font: 500 11px var(--mono); color: var(--ink-2);
+      background: transparent; border: 1px solid var(--rule); border-radius: 4px; padding: 3px 9px;
+    }
+    .bar .go:hover { color: var(--ink); border-color: var(--ink-3); }
+    .bar .ic {
+      all: unset; box-sizing: border-box; cursor: pointer;
+      color: var(--ink-3); font: 12px var(--mono); padding: 2px 5px; border-radius: 4px;
+    }
+    .bar .ic:hover { color: var(--ink); }
+
+    /* 控制条：默认隐藏，点 ◐ 展开。透明度/亮度/移开收起/主题切换 */
+    .tools {
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      padding: 8px 10px; background: var(--paper-edge);
+      border-bottom: 1px solid var(--rule); flex-shrink: 0;
+    }
+    .tools[hidden] { display: none; }
+    .tools label {
+      font: 500 10.5px var(--mono); color: var(--ink-2); letter-spacing: .5px;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .tools input[type=range] { width: 62px; accent-color: var(--amber); }
+    .tools input[type=checkbox] { accent-color: var(--amber); }
+    .seg { display: flex; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
+    .seg button {
+      all: unset; box-sizing: border-box; cursor: pointer;
+      font: 500 10.5px var(--mono); color: var(--ink-3); padding: 3px 9px; background: transparent;
+    }
+    .seg button.on { background: var(--ink); color: var(--paper); }
+
+    .list { overflow: auto; flex: 1; min-height: 0; }
+
+    /* 题目块＝编辑器行号栏：左 gutter 等宽题号 + 右 body */
+    .blk { display: grid; grid-template-columns: 30px 1fr; border-bottom: 1px solid var(--rule); }
+    .blk:last-child { border-bottom: 0; }
+    .blk .num {
+      font: 500 11px/1.9 var(--mono); color: var(--ink-3); text-align: right;
+      padding: 11px 8px 0 0; border-right: 1px solid var(--rule); background: rgba(0,0,0,0.02);
+    }
+    .blk .body { padding: 9px 12px 11px; min-width: 0; }
+    .blk .stem { font-size: 11.5px; color: var(--ink-2); line-height: 1.5; margin-bottom: 5px; }
+    .blk .ans {
+      font-size: 13px; color: var(--ink); line-height: 1.68;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .blk .ans.miss { color: var(--amber); }
+    .blk .ans.miss::before { content: "⚑ "; font-size: 10px; }
+    .blk .ans.err { color: #c2564d; }
+    .blk .ans.none { font: 500 11px/1.6 var(--mono); color: var(--ink-3); letter-spacing: .5px; white-space: normal; }
+    /* 操作行：默认隐藏，块 hover（active-line）才浮现 */
+    .blk .acts { margin-top: 7px; display: flex; gap: 14px; opacity: 0; transition: opacity .12s ease; }
+    .blk .acts a { font: 500 10.5px var(--mono); color: var(--ink-3); letter-spacing: .5px; cursor: pointer; text-decoration: none; }
+    .blk .acts a:hover { color: var(--ink); }
+    .blk:hover { background: var(--wash); }
+    .blk:hover .acts { opacity: 1; }
+    /* 背景/无需作答块：题号与内容压暗，无操作链 */
+    .blk.bg .num { opacity: .55; }
+    .blk.bg .body { color: var(--ink-3); }
+    .blk.bg:hover { background: transparent; }
+
+    .foot {
+      padding: 6px 12px; font: 500 10.5px var(--mono); color: var(--ink-3); letter-spacing: .5px;
+      background: var(--paper-edge); border-top: 1px solid var(--rule); min-height: 14px; flex-shrink: 0;
+    }
+
+    /* 移开收起用的小把手：右下角 30px 圆角方块 */
     .handle {
-      position:fixed; right:16px; bottom:16px; width:34px; height:34px;
-      display:none; align-items:center; justify-content:center;
-      border-radius:50%; background:rgba(20,22,28,0.6); color:#cfd3da;
-      font-size:16px; line-height:1; cursor:pointer; user-select:none;
-      opacity:0.45; transition:opacity 0.15s ease;
-      box-shadow:0 4px 14px rgba(0,0,0,0.4);
+      position: fixed; right: 24px; bottom: 24px; width: 30px; height: 30px;
+      display: none; align-items: center; justify-content: center;
+      border-radius: 6px; background: var(--paper); border: 1px solid var(--rule);
+      box-shadow: 0 3px 12px rgba(0,0,0,0.25); color: var(--ink-3);
+      font: 12px var(--mono); line-height: 1; cursor: pointer; user-select: none;
     }
-    .handle:hover { opacity:1; }
+    .handle:hover { color: var(--ink); }
   `;
 
   const OVERLAY_HTML = `
-    <div class="handle" id="handle" title="点开复习面板">≡</div>
+    <div class="handle" id="handle" title="展开笔记">≡</div>
     <div class="panel" id="panel">
       <div class="bar" id="bar">
-        <span class="title">· 复习面板 ·</span>
+        <span class="name">笔记</span>
         <button id="scan" class="go">扫题作答</button>
-        <button id="hide" title="快捷键 Ctrl+Shift+X 秒隐">×</button>
+        <button id="toggleTools" class="ic" title="面板设置">◐</button>
+        <button id="hide" class="ic" title="收起 Ctrl+Shift+X">×</button>
       </div>
-      <div class="tools">
+      <div class="tools" id="tools" hidden>
         <label>透明 <input type="range" id="opacity" min="0.15" max="1" step="0.05" value="0.95"></label>
         <label>亮度 <input type="range" id="bright" min="0.4" max="1.4" step="0.05" value="1"></label>
         <label><input type="checkbox" id="autocollapse" checked> 移开收起</label>
+        <div class="seg" id="themeSeg">
+          <button type="button" id="themeLight" title="浅色">浅</button>
+          <button type="button" id="themeDark" title="深色">深</button>
+        </div>
       </div>
-      <div class="status" id="status">按「扫题作答」读取全部题目并一次性生成答案</div>
       <div class="list" id="list"></div>
+      <div class="foot" id="status">按「扫题作答」读取全部题目并一次性生成答案</div>
     </div>
   `;
 
@@ -206,6 +278,7 @@
     autoCollapse: true,
     hidden: true,
     collapsed: false,
+    theme: "light",
   };
 
   function ensureOverlay() {
@@ -216,6 +289,9 @@
       "all:initial;position:fixed;z-index:2147483647;top:80px;right:24px;display:none;";
     root = host.attachShadow({ mode: "closed" });
     const wrap = document.createElement("div");
+    wrap.id = "wrap";
+    wrap.className = "wrap";
+    wrap.setAttribute("data-theme", state.theme); // 主题 token 载体，切换只改此属性
     const st = document.createElement("style");
     st.textContent = OVERLAY_CSS;
     wrap.innerHTML = OVERLAY_HTML;
@@ -223,19 +299,47 @@
     (document.body || document.documentElement).appendChild(host);
 
     els = {
+      wrap: root.getElementById("wrap"),
       panel: root.getElementById("panel"),
       handle: root.getElementById("handle"),
       bar: root.getElementById("bar"),
       scan: root.getElementById("scan"),
+      toggleTools: root.getElementById("toggleTools"),
       hide: root.getElementById("hide"),
+      tools: root.getElementById("tools"),
       opacity: root.getElementById("opacity"),
       bright: root.getElementById("bright"),
       autoCollapse: root.getElementById("autocollapse"),
+      themeLight: root.getElementById("themeLight"),
+      themeDark: root.getElementById("themeDark"),
       status: root.getElementById("status"),
       list: root.getElementById("list"),
     };
     wireEvents();
     applyVisual();
+    // 从 storage 读取持久化主题并应用（与 popup 共享 config.theme）
+    chrome.storage.local
+      .get("config")
+      .then(({ config = {} }) => applyTheme(config.theme || "light"))
+      .catch(() => applyTheme("light"));
+  }
+
+  // 只改 wrap 的 data-theme + 分段按钮高亮；不落盘。
+  function applyTheme(theme) {
+    state.theme = theme === "dark" ? "dark" : "light";
+    if (els.wrap) els.wrap.setAttribute("data-theme", state.theme);
+    if (els.themeLight) els.themeLight.classList.toggle("on", state.theme === "light");
+    if (els.themeDark) els.themeDark.classList.toggle("on", state.theme === "dark");
+  }
+
+  // 切换主题并写回 storage 的 config.theme（与 popup 保持一致）。
+  async function setTheme(theme) {
+    applyTheme(theme);
+    try {
+      const { config = {} } = await chrome.storage.local.get("config");
+      config.theme = state.theme;
+      await chrome.storage.local.set({ config });
+    } catch {}
   }
 
   // host 始终保持正常 display，靠内部 panel/handle 切换；hidden 时才整体 display:none。
@@ -298,6 +402,14 @@
     els.handle.addEventListener("mouseenter", () => setCollapsed(false));
     els.handle.addEventListener("click", () => setCollapsed(false));
 
+    // ◐ 展开/收起控制条（默认隐藏，保持极简）
+    els.toggleTools.addEventListener("click", () => {
+      els.tools.hidden = !els.tools.hidden;
+    });
+    // 主题切换（浅/深），写回 storage
+    els.themeLight.addEventListener("click", () => setTheme("light"));
+    els.themeDark.addEventListener("click", () => setTheme("dark"));
+
     els.scan.addEventListener("click", runScan);
     els.hide.addEventListener("click", hideOverlay);
   }
@@ -352,27 +464,39 @@
     return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
   }
 
-  // 扫题后先把所有题行渲染出来（答案区显示「作答中…」，复制按钮先隐藏，等答案回来再显示）。
-  // 每行 = 复制/定位按钮 + 题号 + 题干 + 答案区。
+  // 题号补零成行号感（01、05…），编辑器 gutter 用。
+  function pad2(n) {
+    return String(n).padStart(2, "0");
+  }
+
+  // 扫题后先把所有题块渲染出来（答案区显示「作答中…」，操作链默认隐藏、块 hover 才浮现）。
+  // 每块＝编辑器行号栏：左 gutter 题号 + 右 body（题干 + 答案 + 「↳定位/⧉复制」操作行）。
   function renderQuestionList(questions) {
     els.list.innerHTML = questions
       .map(
         (q) => `
-      <div class="qa" data-idx="${q.index}">
-        <div class="q"><button class="copy" data-copy="${q.index}" style="display:none">复制</button><button class="loc" data-loc="${q.index}">定位</button><span class="tag">#${q.index}</span><span class="stem">${esc(q.stem).slice(0, 120)}</span></div>
-        <div class="a" data-idx="${q.index}">作答中…</div>
+      <div class="blk" data-idx="${q.index}">
+        <div class="num">${pad2(q.index)}</div>
+        <div class="body">
+          <div class="stem">${esc(q.stem).slice(0, 120)}</div>
+          <div class="ans">作答中…</div>
+          <div class="acts">
+            <a data-loc="${q.index}">↳ 定位</a>
+            <a data-copy="${q.index}">⧉ 复制</a>
+          </div>
+        </div>
       </div>`
       )
       .join("");
-    root.querySelectorAll(".loc[data-loc]").forEach((btn) =>
-      btn.addEventListener("click", () => locate(Number(btn.dataset.loc)))
+    root.querySelectorAll(".acts a[data-loc]").forEach((a) =>
+      a.addEventListener("click", () => locate(Number(a.dataset.loc)))
     );
-    root.querySelectorAll(".copy[data-copy]").forEach((btn) =>
-      btn.addEventListener("click", () => onCopy(Number(btn.dataset.copy)))
+    root.querySelectorAll(".acts a[data-copy]").forEach((a) =>
+      a.addEventListener("click", () => onCopy(Number(a.dataset.copy)))
     );
   }
 
-  // 把整卷单次返回的结果铺进已渲染好的题行里。
+  // 把整卷单次返回的结果铺进已渲染好的题块里。
   function fillAnswers(result, questions) {
     if (result && result.mode === "raw") {
       renderRaw(result.raw || "");
@@ -384,43 +508,50 @@
     });
     answers.clear();
     questions.forEach((q) => {
-      const row = root.querySelector(`.qa[data-idx="${q.index}"]`);
-      if (!row) return;
-      const aEl = row.querySelector(".a");
-      const copyBtn = row.querySelector(".copy");
-      aEl.className = "a";
+      const blk = root.querySelector(`.blk[data-idx="${q.index}"]`);
+      if (!blk) return;
+      const aEl = blk.querySelector(".ans");
+      const acts = blk.querySelector(".acts");
+      blk.classList.remove("bg");
+      aEl.className = "ans";
+      if (acts) acts.style.display = "";
       const has = Object.prototype.hasOwnProperty.call(byIndex, q.index);
-      // 模型没返回该题
+      // 模型没返回该题：当背景块处理，无操作链
       if (!has) {
-        aEl.classList.add("empty");
-        aEl.textContent = "（模型未返回该题）";
-        if (copyBtn) copyBtn.style.display = "none";
+        blk.classList.add("bg");
+        aEl.className = "ans none";
+        aEl.textContent = "— 模型未返回 —";
+        if (acts) acts.style.display = "none";
         return;
       }
       const val = String(byIndex[q.index] ?? "");
       answers.set(q.index, val); // 存进 Map 供「复制」复用
-      // 空字符串 = 模型判定为个人信息/背景，无需作答：灰色提示、不给复制按钮
+      // 空字符串 = 模型判定为个人信息/背景，无需作答：背景块样式、无操作链
       if (val.trim() === "") {
-        aEl.classList.add("empty");
-        aEl.textContent = "（背景/无需作答）";
-        if (copyBtn) copyBtn.style.display = "none";
+        blk.classList.add("bg");
+        aEl.className = "ans none";
+        aEl.textContent = "— 背景 · 作上下文 —";
+        if (acts) acts.style.display = "none";
         return;
       }
       if (/^【笔记未覆盖】/.test(val)) aEl.classList.add("miss");
       aEl.textContent = val;
-      if (copyBtn) copyBtn.style.display = "";
     });
   }
 
-  // 兜底：模型没按 JSON 返回时，把 raw 整段显示在列表顶部，给一个「复制全部」。
+  // 兜底：模型没按 JSON 返回时，把 raw 整段显示成一块，给一个「⧉复制全部」。
   function renderRaw(raw) {
     answers.clear();
     els.list.innerHTML = `
-      <div class="qa">
-        <div class="q"><button class="copy" id="copyall">复制全部</button><span class="tag">原始返回</span></div>
-        <div class="a raw"></div>
+      <div class="blk">
+        <div class="num">~~</div>
+        <div class="body">
+          <div class="stem">原始返回</div>
+          <div class="ans raw"></div>
+          <div class="acts"><a id="copyall">⧉ 复制全部</a></div>
+        </div>
       </div>`;
-    root.querySelector(".a.raw").textContent = raw;
+    root.querySelector(".ans.raw").textContent = raw;
     const btn = root.getElementById("copyall");
     if (btn)
       btn.addEventListener("click", () => {
@@ -439,7 +570,7 @@
     el.scrollIntoView({ behavior: "smooth", block: "center" });
     const prevOutline = el.style.outline;
     const prevOffset = el.style.outlineOffset;
-    el.style.outline = "2px solid #6b8afd";
+    el.style.outline = "2px solid #9A7B33";
     el.style.outlineOffset = "2px";
     setTimeout(() => {
       el.style.outline = prevOutline;
@@ -515,6 +646,13 @@
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.type === "TOGGLE_OVERLAY") toggleOverlay();
     else if (msg?.type === "SCAN_NOW") runScan();
+  });
+
+  // 主题跨端同步：popup 改了 config.theme → 悬浮窗实时跟随（若已挂载）。
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local" || !changes.config || !host) return;
+    const t = changes.config.newValue && changes.config.newValue.theme;
+    if (t && t !== state.theme) applyTheme(t);
   });
 
   // content 侧快捷键兜底（防止 chrome.commands 未注册时失效）
