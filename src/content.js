@@ -21,6 +21,13 @@
   }
 
   /* ============================================================
+   * 扫题 + 整卷单次作答的运行时状态
+   * ========================================================== */
+  const qEls = new Map(); // index → 题目 DOM 元素，供「定位」用
+  const answers = new Map(); // index → 答案（可能为空串 = 无需作答），供「复制」复用
+  let currentQuestions = []; // 最近一次扫到的题目数组
+
+  /* ============================================================
    * ② 扫题
    * ========================================================== */
   // type 属性数字码 → 题型（仅在 DOM 嗅探失败时兜底）。
@@ -98,6 +105,7 @@
   }
 
   function scanQuestions() {
+    qEls.clear();
     // 兼容两套模板：.field[topic]（新版 ks.wjx.com/vm/*） + .div_question（老版）
     const nodes = document.querySelectorAll(".field[topic], .div_question");
     const seen = new Set();
@@ -109,6 +117,7 @@
       if (!stem) return; // 过滤布局用的空 field
       const type = detectType(el);
       const topic = Number(el.getAttribute("topic")) || out.length + 1;
+      qEls.set(topic, el); // index → DOM，供「定位」用
       out.push({ index: topic, stem, type, options: getOptions(el, type) });
     });
     return out;
@@ -151,6 +160,10 @@
     .qa .copy { all:unset; cursor:pointer; float:right; font-size:11px; color:#8b909a;
       padding:1px 6px; border-radius:4px; }
     .qa .copy:hover { background:rgba(255,255,255,0.08); color:#cfd3da; }
+    .qa .loc { all:unset; cursor:pointer; float:right; font-size:11px; color:#8b909a;
+      padding:1px 6px; border-radius:4px; margin-left:4px; }
+    .qa .loc:hover { background:rgba(255,255,255,0.08); color:#cfd3da; }
+    .qa .a.err { color:#e0736b; background:transparent; }
     .raw { white-space:pre-wrap; }
     /* 移开收起用的小把手：右下角低存在感圆点 */
     .handle {
@@ -169,7 +182,7 @@
     <div class="panel" id="panel">
       <div class="bar" id="bar">
         <span class="title">· 复习面板 ·</span>
-        <button id="scan" class="go">扫题求答案</button>
+        <button id="scan" class="go">扫题作答</button>
         <button id="hide" title="快捷键 Ctrl+Shift+X 秒隐">×</button>
       </div>
       <div class="tools">
@@ -177,7 +190,7 @@
         <label>亮度 <input type="range" id="bright" min="0.4" max="1.4" step="0.05" value="1"></label>
         <label><input type="checkbox" id="autocollapse" checked> 移开收起</label>
       </div>
-      <div class="status" id="status">按「扫题求答案」或快捷键 Ctrl+Shift+S 开始</div>
+      <div class="status" id="status">按「扫题作答」读取全部题目并一次性生成答案</div>
       <div class="list" id="list"></div>
     </div>
   `;
@@ -339,61 +352,122 @@
     return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
   }
 
-  function renderStems(questions) {
+  // 扫题后先把所有题行渲染出来（答案区显示「作答中…」，复制按钮先隐藏，等答案回来再显示）。
+  // 每行 = 复制/定位按钮 + 题号 + 题干 + 答案区。
+  function renderQuestionList(questions) {
     els.list.innerHTML = questions
       .map(
         (q) => `
       <div class="qa" data-idx="${q.index}">
-        <div class="q"><span class="tag">#${q.index}</span>${esc(q.stem).slice(0, 120)}</div>
-        <div class="a" data-role="a">…</div>
+        <div class="q"><button class="copy" data-copy="${q.index}" style="display:none">复制</button><button class="loc" data-loc="${q.index}">定位</button><span class="tag">#${q.index}</span><span class="stem">${esc(q.stem).slice(0, 120)}</span></div>
+        <div class="a" data-idx="${q.index}">作答中…</div>
       </div>`
       )
       .join("");
+    root.querySelectorAll(".loc[data-loc]").forEach((btn) =>
+      btn.addEventListener("click", () => locate(Number(btn.dataset.loc)))
+    );
+    root.querySelectorAll(".copy[data-copy]").forEach((btn) =>
+      btn.addEventListener("click", () => onCopy(Number(btn.dataset.copy)))
+    );
   }
 
-  function renderAnswers(result, questions) {
-    if (result.mode === "raw") {
-      els.list.innerHTML = `<div class="qa"><div class="a raw">${esc(result.raw)}</div>
-        <button class="copy" id="copyall">复制全部</button></div>`;
-      const btn = root.getElementById("copyall");
-      if (btn) btn.addEventListener("click", () => copyText(result.raw));
+  // 把整卷单次返回的结果铺进已渲染好的题行里。
+  function fillAnswers(result, questions) {
+    if (result && result.mode === "raw") {
+      renderRaw(result.raw || "");
       return;
     }
     const byIndex = {};
-    result.answers.forEach((a) => (byIndex[a.index] = a.answer));
-    els.list.innerHTML = questions
-      .map((q) => {
-        const has = Object.prototype.hasOwnProperty.call(byIndex, q.index);
-        const val = has ? String(byIndex[q.index] ?? "") : null;
-        // 空字符串 = 模型判定为个人信息/背景，无需作答：灰色提示、不给复制按钮
-        if (val !== null && val.trim() === "") {
-          return `
-      <div class="qa" data-idx="${q.index}">
-        <div class="q"><span class="tag">#${q.index}</span>${esc(q.stem).slice(0, 120)}</div>
-        <div class="a empty">（背景/无需作答）</div>
-      </div>`;
-        }
-        const ans = val == null ? "（模型未返回该题）" : val;
-        const miss = /^【笔记未覆盖】/.test(ans) ? " miss" : "";
-        return `
-      <div class="qa" data-idx="${q.index}">
-        <div class="q"><button class="copy" data-copy="${q.index}">复制</button>
-          <span class="tag">#${q.index}</span>${esc(q.stem).slice(0, 120)}</div>
-        <div class="a${miss}">${esc(ans)}</div>
-      </div>`;
-      })
-      .join("");
-    root.querySelectorAll(".copy[data-copy]").forEach((btn) => {
-      btn.addEventListener("click", () => copyText(byIndex[Number(btn.dataset.copy)] || ""));
+    (result && result.answers ? result.answers : []).forEach((a) => {
+      byIndex[a.index] = a.answer;
     });
+    answers.clear();
+    questions.forEach((q) => {
+      const row = root.querySelector(`.qa[data-idx="${q.index}"]`);
+      if (!row) return;
+      const aEl = row.querySelector(".a");
+      const copyBtn = row.querySelector(".copy");
+      aEl.className = "a";
+      const has = Object.prototype.hasOwnProperty.call(byIndex, q.index);
+      // 模型没返回该题
+      if (!has) {
+        aEl.classList.add("empty");
+        aEl.textContent = "（模型未返回该题）";
+        if (copyBtn) copyBtn.style.display = "none";
+        return;
+      }
+      const val = String(byIndex[q.index] ?? "");
+      answers.set(q.index, val); // 存进 Map 供「复制」复用
+      // 空字符串 = 模型判定为个人信息/背景，无需作答：灰色提示、不给复制按钮
+      if (val.trim() === "") {
+        aEl.classList.add("empty");
+        aEl.textContent = "（背景/无需作答）";
+        if (copyBtn) copyBtn.style.display = "none";
+        return;
+      }
+      if (/^【笔记未覆盖】/.test(val)) aEl.classList.add("miss");
+      aEl.textContent = val;
+      if (copyBtn) copyBtn.style.display = "";
+    });
+  }
+
+  // 兜底：模型没按 JSON 返回时，把 raw 整段显示在列表顶部，给一个「复制全部」。
+  function renderRaw(raw) {
+    answers.clear();
+    els.list.innerHTML = `
+      <div class="qa">
+        <div class="q"><button class="copy" id="copyall">复制全部</button><span class="tag">原始返回</span></div>
+        <div class="a raw"></div>
+      </div>`;
+    root.querySelector(".a.raw").textContent = raw;
+    const btn = root.getElementById("copyall");
+    if (btn)
+      btn.addEventListener("click", () => {
+        copyText(raw);
+        setStatus("已复制全部内容");
+      });
+  }
+
+  // 定位：滚动到题目并短暂高亮。scrollIntoView 不触发 window blur，安全。
+  function locate(index) {
+    const el = qEls.get(index);
+    if (!el) {
+      setStatus("定位不到第 " + index + " 题的元素");
+      return;
+    }
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    const prevOutline = el.style.outline;
+    const prevOffset = el.style.outlineOffset;
+    el.style.outline = "2px solid #6b8afd";
+    el.style.outlineOffset = "2px";
+    setTimeout(() => {
+      el.style.outline = prevOutline;
+      el.style.outlineOffset = prevOffset;
+    }, 1500);
+  }
+
+  // 复制该题答案（从 answers Map 取）；还没作答完/无需作答则提示，不复制。
+  function onCopy(index) {
+    if (!answers.has(index)) {
+      setStatus("第 " + index + " 题还在作答中，请稍候");
+      return;
+    }
+    const val = String(answers.get(index) ?? "");
+    if (!val.trim()) {
+      setStatus("第 " + index + " 题无需作答");
+      return;
+    }
+    copyText(val);
+    setStatus("已复制第 " + index + " 题答案");
   }
 
   // MV3 后台 SW 可能休眠/扩展刚重载 → 首次 sendMessage 偶发
   // "Could not establish connection"。带一次重试：先发一次唤醒 SW，等 350ms 再重试。
-  async function sendAsk(questions) {
+  async function sendBg(message) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        return await chrome.runtime.sendMessage({ type: "ASK_AI", questions });
+        return await chrome.runtime.sendMessage(message);
       } catch (e) {
         if (attempt === 0) {
           await new Promise((r) => setTimeout(r, 350));
@@ -404,18 +478,25 @@
     }
   }
 
+  // 扫题作答：扫题 → 先把所有题行渲染出来 → 一次性把整卷送 background 生成 → 结果铺回各行。
   async function runScan() {
     showOverlay();
     const questions = scanQuestions();
     if (!questions.length) {
+      currentQuestions = [];
+      answers.clear();
+      els.list.innerHTML = "";
       setStatus("没扫到题目（确认在答题页且题目已加载）");
       return;
     }
-    renderStems(questions);
-    setStatus(`扫到 ${questions.length} 题，正在请求 AI…`);
+    currentQuestions = questions;
+    answers.clear();
+    renderQuestionList(questions);
+    setStatus(`作答中… 共 ${questions.length} 题`);
+
     let resp;
     try {
-      resp = await sendAsk(questions);
+      resp = await sendBg({ type: "ASK_ALL", questions });
     } catch (e) {
       setStatus("扩展通信失败，请在 chrome://extensions 重新加载本扩展并刷新页面(F5)后重试");
       return;
@@ -424,7 +505,7 @@
       setStatus("失败：" + (resp?.error || "未知错误"));
       return;
     }
-    renderAnswers(resp.result, questions);
+    fillAnswers(resp.result, questions);
     setStatus(`完成，共 ${questions.length} 题`);
   }
 

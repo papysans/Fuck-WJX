@@ -7,6 +7,7 @@ async function load() {
   $("apiKey").value = config.apiKey || "";
   $("model").value = config.model || "";
   $("temperature").value = config.temperature ?? 0.3;
+  $("wordLimit").value = config.wordLimit ?? 300;
 }
 
 function msg(text, isErr) {
@@ -22,6 +23,7 @@ async function save() {
     apiKey: $("apiKey").value.trim(),
     model: $("model").value.trim(),
     temperature: Number($("temperature").value) || 0.3,
+    wordLimit: Number($("wordLimit").value) || 300,
   };
   await chrome.storage.local.set({ config, notes: $("notes").value });
   msg("已保存 ✓");
