@@ -1,0 +1,12 @@
+# 密钥 / 本地配置 —— 绝不提交
+.env
+.env.*
+!.env.example
+
+# 依赖 / 构建产物
+node_modules/
+dist/
+*.zip
+
+# 系统
+.DS_Store

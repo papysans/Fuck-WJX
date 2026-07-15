@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="wrap">
+    <h1>复习面板</h1>
+
+    <section>
+      <div class="sec-title">今日笔记（markdown）</div>
+      <textarea id="notes" placeholder="把当天整理的知识点粘进来，AI 会优先据此答题"></textarea>
+    </section>
+
+    <section>
+      <div class="sec-title">AI 接口（OpenAI 兼容）</div>
+      <label>Base URL
+        <input id="baseUrl" type="text" placeholder="https://api.deepseek.com" />
+      </label>
+      <label>API Key
+        <input id="apiKey" type="password" placeholder="sk-..." />
+      </label>
+      <div class="row">
+        <label class="grow">Model
+          <input id="model" type="text" placeholder="deepseek-chat" />
+        </label>
+        <label class="narrow">温度
+          <input id="temperature" type="number" min="0" max="2" step="0.1" value="0.3" />
+        </label>
+      </div>
+    </section>
+
+    <div class="btns">
+      <button id="save" class="primary">保存</button>
+      <button id="open">打开悬浮窗</button>
+      <button id="scan">扫题求答案</button>
+    </div>
+    <div class="btns">
+      <button id="export">导出配置</button>
+      <button id="import">导入配置</button>
+      <input id="importFile" type="file" accept="application/json" hidden />
+    </div>
+    <div id="msg" class="msg"></div>
+    <div class="hint">快捷键：Ctrl+Shift+X 秒隐/显 · Ctrl+Shift+S 扫题。key 只存本地，不上传。</div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
