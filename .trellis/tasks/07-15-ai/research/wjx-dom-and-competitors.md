@@ -40,6 +40,25 @@ document.getElementsByClassName("div_question")   // 每道题一个容器
 
 > 本项目题目**以主观简答/大题（textarea）为主**，选择题为辅。读题时把题干 + 题型 + （若有）选项一起结构化抽出即可。
 
+## 2b. 新版模板（ks.wjx.com 考试页，2026 实测确认）
+
+⚠️ **`ks.wjx.com/vm/*` 等新版考试页不用 `.div_question`**，用的是 `.field` 容器。老选择器在这类页面一道都匹配不到。实测 `https://ks.wjx.com/vm/wF0UCvZ.aspx` 抓取结果：
+
+```html
+<div class='field ui-field-contain' topic='1' id='div1' req='1' data-role='fieldcontain' type='1'>
+  <div class='field-label'><span class='req'>*</span><div class='topichtml'>你的姓名：</div></div>
+  <div class='ui-input-text'><input type='text' id='q1' name='q1'/></div>
+</div>
+```
+
+- **容器**：`div.field.ui-field-contain[topic][data-role="fieldcontain"]`，`id='divN'`
+- **题号**：`topic` 属性
+- **题型**：`type` 属性（数字码）——实测 `type='1'`=单行填空(input text)、`type='2'`=简答/多行(textarea)。约定：3=单选 4=多选 5=量表 6=矩阵 7=排序 8=比重 11=评分（未在该页出现，需真机再确认）
+- **题干**：`.topichtml`（不含 `*` req 标记，干净）
+- **切屏检测坐实**：页面 JS 含 `var maxCheatTimes`、`activityCommonInfo` 等 → 考试模式确实统计作弊/切屏次数，走后台不失焦的设计正确。
+
+**扫题选择器要兼容两套模板**：优先 `.field[topic]`（新）+ `.div_question`（老）。题型判定**优先按容器 `type` 属性 + 实际 input 类型（textarea/radio/checkbox）双重判断**，比纯 class 嗅探稳。
+
 ## 3. 读题实现要点
 
 ```js

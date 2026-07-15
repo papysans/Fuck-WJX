@@ -23,25 +23,44 @@
   /* ============================================================
    * ② 扫题
    * ========================================================== */
+  // type 属性数字码 → 题型（仅在 DOM 嗅探失败时兜底）。
+  // 实测：1=单行填空(input text) 2=简答(textarea) 3=单选 4=多选 5=量表 6=矩阵 7=排序 8=比重 11=评分
+  const TYPE_CODE = {
+    "1": "text",
+    "2": "text",
+    "3": "single",
+    "4": "multi",
+    "5": "slider",
+    "6": "matrix",
+    "7": "sort",
+    "8": "slider",
+    "11": "rating",
+  };
+
+  // DOM 实测优先（比 class 嗅探稳），容器 type 属性兜底。
   function detectType(el) {
-    if (el.querySelector(".ulradiocheck")) {
-      const input = el.querySelector(".ulradiocheck input");
-      if (input && input.type === "checkbox") return "multi";
-      // 两个选项的单选常是判断题，这里统一按 single 处理即可
-      return "single";
+    if (el.querySelector("textarea")) return "text"; // 简答/填空：本项目主战场
+    if (el.querySelector('input[type="text"], input[type="number"]')) return "text";
+    if (el.querySelector('input[type="checkbox"]')) return "multi";
+    if (el.querySelector('input[type="radio"]')) return "single";
+    // 老模板 .ulradiocheck：内部 input.type 区分单/多选
+    const ul = el.querySelector(".ulradiocheck");
+    if (ul) {
+      const input = ul.querySelector("input");
+      return input && input.type === "checkbox" ? "multi" : "single";
     }
     if (el.querySelector("table")) return "matrix";
-    if (el.querySelector("textarea")) return "text"; // 简答/填空：本项目主战场
     if (el.querySelector("select")) return "select";
-    if (el.querySelector(".slider")) return "slider";
+    const code = el.getAttribute("type");
+    if (code && TYPE_CODE[code]) return TYPE_CODE[code];
     return "unknown";
   }
 
   function cleanStem(el) {
     const node =
+      el.querySelector(".topichtml") || // 新版模板（干净，不含 * 号）
       el.querySelector(".field-label") ||
-      el.querySelector(".topichtml") ||
-      el.querySelector(".field") ||
+      el.querySelector(".field") || // 老模板
       el;
     const text = (node.innerText || node.textContent || "").trim();
     return text.replace(/\s+/g, " ").trim();
@@ -49,22 +68,49 @@
 
   function getOptions(el, type) {
     if (type !== "single" && type !== "multi") return [];
-    return [...el.querySelectorAll(".ulradiocheck li")]
-      .map((li) => (li.innerText || "").replace(/\s+/g, " ").trim())
-      .filter(Boolean);
+    const inputs = el.querySelectorAll('input[type="radio"], input[type="checkbox"]');
+    const opts = [];
+    inputs.forEach((input) => {
+      let txt = "";
+      if (input.id) {
+        const label = el.querySelector(`label[for="${CSS.escape(input.id)}"]`);
+        if (label) txt = label.innerText || "";
+      }
+      if (!txt.trim()) {
+        const box = input.closest("li, div, label, span");
+        if (box) txt = box.innerText || "";
+      }
+      txt = txt.replace(/\s+/g, " ").trim();
+      if (txt) opts.push(txt);
+    });
+    let result = [...new Set(opts)];
+    // 老模板兜底：通用逻辑取不到时退回 .ulradiocheck li
+    if (!result.length) {
+      result = [
+        ...new Set(
+          [...el.querySelectorAll(".ulradiocheck li")]
+            .map((li) => (li.innerText || "").replace(/\s+/g, " ").trim())
+            .filter(Boolean)
+        ),
+      ];
+    }
+    return result;
   }
 
   function scanQuestions() {
-    const nodes = document.getElementsByClassName("div_question");
+    // 兼容两套模板：.field[topic]（新版 ks.wjx.com/vm/*） + .div_question（老版）
+    const nodes = document.querySelectorAll(".field[topic], .div_question");
+    const seen = new Set();
     const out = [];
-    for (let i = 0; i < nodes.length; i++) {
-      const el = nodes[i];
+    nodes.forEach((el) => {
+      if (seen.has(el)) return; // 去重（同一容器可能命中两个选择器）
+      seen.add(el);
       const stem = cleanStem(el);
-      if (!stem) continue;
+      if (!stem) return; // 过滤布局用的空 field
       const type = detectType(el);
-      const topic = Number(el.getAttribute("topic")) || i + 1;
+      const topic = Number(el.getAttribute("topic")) || out.length + 1;
       out.push({ index: topic, stem, type, options: getOptions(el, type) });
-    }
+    });
     return out;
   }
 
@@ -117,7 +163,7 @@
       <div class="tools">
         <label>透明 <input type="range" id="opacity" min="0.15" max="1" step="0.05" value="0.95"></label>
         <label>亮度 <input type="range" id="bright" min="0.4" max="1.4" step="0.05" value="1"></label>
-        <label><input type="checkbox" id="fade" checked> 移开淡出</label>
+        <label><input type="checkbox" id="fade" checked> 移开即隐</label>
       </div>
       <div class="status" id="status">按「扫题求答案」或快捷键 Ctrl+Shift+S 开始</div>
       <div class="list" id="list"></div>
@@ -127,7 +173,7 @@
   let host = null;
   let root = null;
   let els = {};
-  const state = { visible: false, opacity: 0.95, brightness: 1, idleFade: true, idleOpacity: 0.12 };
+  const state = { visible: false, opacity: 0.95, brightness: 1, idleHide: true };
 
   function ensureOverlay() {
     if (host) return;
@@ -191,12 +237,12 @@
       state.brightness = Number(els.bright.value);
       els.panel.style.filter = `brightness(${state.brightness})`;
     });
-    els.fade.addEventListener("change", () => (state.idleFade = els.fade.checked));
+    els.fade.addEventListener("change", () => (state.idleHide = els.fade.checked));
 
-    // 鼠标移开自动淡出
+    // 鼠标移开即彻底隐藏（老师走过来秒消失），靠 Ctrl+Shift+X 再唤出
     host.addEventListener("mouseenter", () => (host.style.opacity = String(state.opacity)));
     host.addEventListener("mouseleave", () => {
-      if (state.idleFade) host.style.opacity = String(state.idleOpacity);
+      if (state.idleHide) host.style.display = "none";
     });
 
     els.scan.addEventListener("click", runScan);
@@ -215,8 +261,10 @@
   }
   function toggleOverlay() {
     ensureOverlay();
-    if (state.visible) hideOverlay();
-    else showOverlay();
+    // 按当前 display 翻转：移开自动隐藏后，按快捷键也能再唤出
+    const hidden = host.style.display === "none";
+    host.style.display = hidden ? "" : "none";
+    state.visible = hidden;
   }
 
   function setStatus(t) {
