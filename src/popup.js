@@ -26,6 +26,7 @@ async function load() {
   $("model").value = config.model || "";
   $("temperature").value = config.temperature ?? 0.3;
   $("wordLimit").value = config.wordLimit ?? 300;
+  $("autoFill").checked = !!config.autoFill;
   applyTheme(config.theme || "light");
 }
 
@@ -43,6 +44,7 @@ async function save() {
     model: $("model").value.trim(),
     temperature: Number($("temperature").value) || 0.3,
     wordLimit: Number($("wordLimit").value) || 300,
+    autoFill: $("autoFill").checked,
     theme: currentTheme,
   };
   await chrome.storage.local.set({ config, notes: $("notes").value });

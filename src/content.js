@@ -257,6 +257,7 @@
         <label>透明 <input type="range" id="opacity" min="0.15" max="1" step="0.05" value="0.95"></label>
         <label>亮度 <input type="range" id="bright" min="0.4" max="1.4" step="0.05" value="1"></label>
         <label><input type="checkbox" id="autocollapse" checked> 移开收起</label>
+        <label><input type="checkbox" id="autofill"> 自动填入页面</label>
         <div class="seg" id="themeSeg">
           <button type="button" id="themeLight" title="浅色">浅</button>
           <button type="button" id="themeDark" title="深色">深</button>
@@ -279,6 +280,7 @@
     hidden: true,
     collapsed: false,
     theme: "light",
+    autoFill: false, // 生成后是否自动把答案填进页面文本框（默认关）
   };
 
   function ensureOverlay() {
@@ -310,6 +312,7 @@
       opacity: root.getElementById("opacity"),
       bright: root.getElementById("bright"),
       autoCollapse: root.getElementById("autocollapse"),
+      autoFill: root.getElementById("autofill"),
       themeLight: root.getElementById("themeLight"),
       themeDark: root.getElementById("themeDark"),
       status: root.getElementById("status"),
@@ -320,7 +323,10 @@
     // 从 storage 读取持久化主题并应用（与 popup 共享 config.theme）
     chrome.storage.local
       .get("config")
-      .then(({ config = {} }) => applyTheme(config.theme || "light"))
+      .then(({ config = {} }) => {
+        applyTheme(config.theme || "light");
+        applyAutoFill(!!config.autoFill);
+      })
       .catch(() => applyTheme("light"));
   }
 
@@ -338,6 +344,22 @@
     try {
       const { config = {} } = await chrome.storage.local.get("config");
       config.theme = state.theme;
+      await chrome.storage.local.set({ config });
+    } catch {}
+  }
+
+  // 只改 state + checkbox，不落盘（与 applyTheme 对称）。
+  function applyAutoFill(on) {
+    state.autoFill = !!on;
+    if (els.autoFill) els.autoFill.checked = state.autoFill;
+  }
+
+  // 切换自动填充并写回 config.autoFill（合并写，不覆盖其它字段；与 popup 保持一致）。
+  async function setAutoFill(on) {
+    applyAutoFill(on);
+    try {
+      const { config = {} } = await chrome.storage.local.get("config");
+      config.autoFill = state.autoFill;
       await chrome.storage.local.set({ config });
     } catch {}
   }
@@ -394,6 +416,7 @@
       state.autoCollapse = els.autoCollapse.checked;
       if (!state.autoCollapse) setCollapsed(false); // 关闭时面板常显，不再收起
     });
+    els.autoFill.addEventListener("change", () => setAutoFill(els.autoFill.checked));
 
     // 移开收起：鼠标离开面板 → 收起到右下角把手；移到把手 → 展开回面板。
     els.panel.addEventListener("mouseleave", () => {
@@ -483,6 +506,7 @@
           <div class="acts">
             <a data-loc="${q.index}">↳ 定位</a>
             <a data-copy="${q.index}">⧉ 复制</a>
+            <a data-fill="${q.index}" hidden>⇢ 填入</a>
           </div>
         </div>
       </div>`
@@ -493,6 +517,9 @@
     );
     root.querySelectorAll(".acts a[data-copy]").forEach((a) =>
       a.addEventListener("click", () => onCopy(Number(a.dataset.copy)))
+    );
+    root.querySelectorAll(".acts a[data-fill]").forEach((a) =>
+      a.addEventListener("click", () => onFill(Number(a.dataset.fill), a))
     );
   }
 
@@ -536,7 +563,12 @@
       }
       if (/^【笔记未覆盖】/.test(val)) aEl.classList.add("miss");
       aEl.textContent = val;
+      // 文本可填的题才露出「填入」链（选择题 fillFieldOf 为 null → 保持隐藏）
+      const fillLink = blk.querySelector("a[data-fill]");
+      if (fillLink) fillLink.hidden = !fillFieldOf(q.index);
     });
+    // 开关开启：铺完答案后依次自动填入页面（仅 structured 分支，raw 兜底不填）
+    if (state.autoFill) autoFillAll(questions);
   }
 
   // 兜底：模型没按 JSON 返回时，把 raw 整段显示成一块，给一个「⧉复制全部」。
@@ -591,6 +623,64 @@
     }
     copyText(val);
     setStatus("已复制第 " + index + " 题答案");
+  }
+
+  /* ============================================================
+   * ④ 自动填充：把答案写进页面对应文本框（可选）
+   * ========================================================== */
+  // 文本作答框选择器：textarea / 单行文本 / 数字 / 无 type 的 input（选择题取不到 → null）。
+  const FILL_SELECTOR =
+    'textarea, input[type="text"], input[type="number"], input:not([type])';
+
+  function fillFieldOf(index) {
+    const el = qEls.get(index);
+    return el ? el.querySelector(FILL_SELECTOR) : null;
+  }
+
+  // 把某题答案填进页面文本框，并派发 input/change 让页面框架（问卷星 jQuery）感知。
+  // programmatic 赋值不走 paste，与破反粘贴逻辑无冲突。
+  // 缺元素 / 空答案 / 非文本框 → 返回 false（背景题、选择题不填，MVP 不点选项）。
+  function fillOne(index) {
+    const el = qEls.get(index);
+    const raw = answers.get(index);
+    if (!el || !raw) return false;
+    const text = raw.replace(/^【笔记未覆盖】\s*/, ""); // 剥掉 UI 标记前缀
+    if (!text.trim()) return false;
+    const field = el.querySelector(FILL_SELECTOR);
+    if (!field) return false;
+    field.focus();
+    field.value = text;
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    field.dispatchEvent(new Event("change", { bubbles: true }));
+    field.blur();
+    return true;
+  }
+
+  // 单题「填入」：成功则链文字临时变「已填 ✓」1.5s；失败状态栏提示不是文本框。
+  function onFill(index, linkEl) {
+    if (fillOne(index)) {
+      if (linkEl) {
+        const prev = linkEl.textContent;
+        linkEl.textContent = "已填 ✓";
+        setTimeout(() => {
+          linkEl.textContent = prev;
+        }, 1500);
+      }
+    } else {
+      setStatus("该题不是文本框，未填");
+    }
+  }
+
+  // 自动填全部：依次填「文本可填且答案非空」的题，题间 ~80ms 降低机械感。
+  async function autoFillAll(questions) {
+    let n = 0;
+    for (const q of questions) {
+      if (fillOne(q.index)) {
+        n++;
+        await new Promise((r) => setTimeout(r, 80));
+      }
+    }
+    setStatus(`已自动填入 ${n} 题`);
   }
 
   // MV3 后台 SW 可能休眠/扩展刚重载 → 首次 sendMessage 偶发
@@ -651,8 +741,10 @@
   // 主题跨端同步：popup 改了 config.theme → 悬浮窗实时跟随（若已挂载）。
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local" || !changes.config || !host) return;
-    const t = changes.config.newValue && changes.config.newValue.theme;
-    if (t && t !== state.theme) applyTheme(t);
+    const cfg = changes.config.newValue || {};
+    if (cfg.theme && cfg.theme !== state.theme) applyTheme(cfg.theme);
+    if (typeof cfg.autoFill === "boolean" && cfg.autoFill !== state.autoFill)
+      applyAutoFill(cfg.autoFill);
   });
 
   // content 侧快捷键兜底（防止 chrome.commands 未注册时失效）
